@@ -79,6 +79,7 @@ type MessageResponse struct {
 	ID        uuid.UUID `json:"id"`
 	RoomID    uuid.UUID `json:"room_id"`
 	UserID    uuid.UUID `json:"user_id"`
+	Username  string    `json:"username"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -88,6 +89,7 @@ func MessageFrom(m *domain.Message) MessageResponse {
 		ID:        m.ID,
 		RoomID:    m.RoomID,
 		UserID:    m.UserID,
+		Username:  m.Username,
 		Content:   m.Content,
 		CreatedAt: m.CreatedAt,
 	}
@@ -103,13 +105,14 @@ func MessagesFrom(ms []domain.Message) []MessageResponse {
 
 type RoomMemberResponse struct {
 	UserID   uuid.UUID `json:"user_id"`
+	Username string    `json:"username"`
 	JoinedAt time.Time `json:"joined_at"`
 }
 
 func MembersFrom(ms []domain.RoomMember) []RoomMemberResponse {
 	out := make([]RoomMemberResponse, 0, len(ms))
 	for _, m := range ms {
-		out = append(out, RoomMemberResponse{UserID: m.UserID, JoinedAt: m.JoinedAt})
+		out = append(out, RoomMemberResponse{UserID: m.UserID, Username: m.Username, JoinedAt: m.JoinedAt})
 	}
 	return out
 }

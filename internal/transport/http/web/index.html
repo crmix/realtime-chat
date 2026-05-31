@@ -176,6 +176,10 @@ function setName(id, name) {
   if (id && name) state.nameCache[id] = name;
 }
 
+function cacheFromMessage(m) {
+  if (m && m.user_id && m.username) state.nameCache[m.user_id] = m.username;
+}
+
 function nameFor(id) {
   if (state.me && id === state.me.id) return state.me.username + ' (you)';
   return state.nameCache[id] || ('user-' + (id || '').slice(0, 6));
@@ -311,7 +315,13 @@ async function enterRoom(room) {
   wsSend({ type: 'subscribe', room_id: room.id });
 
   try {
+    const members = await api('/rooms/' + room.id + '/members') || [];
+    members.forEach(mem => setName(mem.user_id, mem.username));
+  } catch {}
+
+  try {
     const msgs = await api('/rooms/' + room.id + '/messages?limit=50') || [];
+    msgs.forEach(cacheFromMessage);
     state.messages = msgs.slice().reverse();
     renderMessages();
   } catch (err) {
@@ -396,6 +406,7 @@ function connectWS() {
     let env;
     try { env = JSON.parse(e.data); } catch { return; }
     if (env.type === 'message' && env.payload) {
+      cacheFromMessage(env.payload);
       if (state.currentRoom && env.payload.room_id === state.currentRoom.id) {
         state.messages.push(env.payload);
         renderMessages();

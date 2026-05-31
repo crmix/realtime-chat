@@ -30,6 +30,7 @@ type messageEnvelope struct {
 	ID        uuid.UUID `json:"id"`
 	RoomID    uuid.UUID `json:"room_id"`
 	UserID    uuid.UUID `json:"user_id"`
+	Username  string    `json:"username"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -39,6 +40,7 @@ func (b *EventBus) PublishMessage(ctx context.Context, m domain.Message) error {
 		ID:        m.ID,
 		RoomID:    m.RoomID,
 		UserID:    m.UserID,
+		Username:  m.Username,
 		Content:   m.Content,
 		CreatedAt: m.CreatedAt,
 	}
@@ -80,6 +82,7 @@ func (b *EventBus) SubscribeMessages(ctx context.Context) (<-chan domain.Message
 					ID:        env.ID,
 					RoomID:    env.RoomID,
 					UserID:    env.UserID,
+					Username:  env.Username,
 					Content:   env.Content,
 					CreatedAt: env.CreatedAt,
 				}

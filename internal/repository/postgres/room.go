@@ -130,9 +130,11 @@ func (r *RoomRepository) IsMember(ctx context.Context, roomID, userID uuid.UUID)
 
 func (r *RoomRepository) ListMembers(ctx context.Context, roomID uuid.UUID) ([]domain.RoomMember, error) {
 	const q = `
-		SELECT room_id, user_id, joined_at FROM room_members
-		WHERE room_id = $1
-		ORDER BY joined_at ASC
+		SELECT rm.room_id, rm.user_id, u.username, rm.joined_at
+		FROM room_members rm
+		JOIN users u ON u.id = rm.user_id
+		WHERE rm.room_id = $1
+		ORDER BY rm.joined_at ASC
 	`
 	rows, err := r.pool.Query(ctx, q, roomID)
 	if err != nil {
@@ -143,7 +145,7 @@ func (r *RoomRepository) ListMembers(ctx context.Context, roomID uuid.UUID) ([]d
 	out := []domain.RoomMember{}
 	for rows.Next() {
 		var m domain.RoomMember
-		if err := rows.Scan(&m.RoomID, &m.UserID, &m.JoinedAt); err != nil {
+		if err := rows.Scan(&m.RoomID, &m.UserID, &m.Username, &m.JoinedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

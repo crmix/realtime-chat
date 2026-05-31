@@ -11,6 +11,7 @@ type Message struct {
 	ID        uuid.UUID
 	RoomID    uuid.UUID
 	UserID    uuid.UUID
+	Username  string // denormalized from users.username for display; populated by repository
 	Content   string
 	CreatedAt time.Time
 }

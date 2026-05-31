@@ -22,9 +22,9 @@ func (r *MessageRepository) Create(ctx context.Context, m *domain.Message) error
 	const q = `
 		INSERT INTO messages (id, room_id, user_id, content, created_at)
 		VALUES ($1, $2, $3, $4, $5)
+		RETURNING (SELECT username FROM users WHERE id = $3)
 	`
-	_, err := r.pool.Exec(ctx, q, m.ID, m.RoomID, m.UserID, m.Content, m.CreatedAt)
-	return err
+	return r.pool.QueryRow(ctx, q, m.ID, m.RoomID, m.UserID, m.Content, m.CreatedAt).Scan(&m.Username)
 }
 
 func (r *MessageRepository) ListByRoom(ctx context.Context, roomID uuid.UUID, f domain.HistoryFilter) ([]domain.Message, error) {
@@ -38,10 +38,11 @@ func (r *MessageRepository) ListByRoom(ctx context.Context, roomID uuid.UUID, f 
 	}
 
 	const q = `
-		SELECT id, room_id, user_id, content, created_at
-		FROM messages
-		WHERE room_id = $1 AND created_at < $2
-		ORDER BY created_at DESC
+		SELECT m.id, m.room_id, m.user_id, u.username, m.content, m.created_at
+		FROM messages m
+		JOIN users u ON u.id = m.user_id
+		WHERE m.room_id = $1 AND m.created_at < $2
+		ORDER BY m.created_at DESC
 		LIMIT $3
 	`
 	rows, err := r.pool.Query(ctx, q, roomID, before, limit)
@@ -53,7 +54,7 @@ func (r *MessageRepository) ListByRoom(ctx context.Context, roomID uuid.UUID, f 
 	out := []domain.Message{}
 	for rows.Next() {
 		var m domain.Message
-		if err := rows.Scan(&m.ID, &m.RoomID, &m.UserID, &m.Content, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.RoomID, &m.UserID, &m.Username, &m.Content, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

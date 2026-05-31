@@ -26,6 +26,7 @@ type Room struct {
 type RoomMember struct {
 	RoomID   uuid.UUID
 	UserID   uuid.UUID
+	Username string // denormalized from users.username; populated by repository
 	JoinedAt time.Time
 }
 
