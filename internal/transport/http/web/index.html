@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>realtime-chat</title>
+<style>
+  :root {
+    --bg: #1a1b26;
+    --panel: #24283b;
+    --panel-hi: #2f334d;
+    --text: #c0caf5;
+    --muted: #565f89;
+    --accent: #7aa2f7;
+    --accent-2: #9ece6a;
+    --danger: #f7768e;
+    --border: #414868;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 800px; margin: 0 auto; padding: 16px; height: 100%; display: flex; flex-direction: column; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  h2 { font-size: 14px; color: var(--muted); margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  input, button, select { font: inherit; color: var(--text); }
+  input, select {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; width: 100%;
+  }
+  button {
+    background: var(--accent); color: #1a1b26; border: 0; border-radius: 6px;
+    padding: 8px 14px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.secondary { background: var(--panel-hi); color: var(--text); }
+  button.link { background: transparent; color: var(--accent); padding: 4px; font-weight: normal; }
+  form { display: flex; flex-direction: column; gap: 8px; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .err { color: var(--danger); min-height: 1.4em; font-size: 13px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .tab {
+    background: transparent; border: 0; color: var(--muted); padding: 8px 12px;
+    border-bottom: 2px solid transparent; cursor: pointer; font-weight: 600;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; }
+  .badge { font-size: 12px; color: var(--muted); }
+  .badge.ok { color: var(--accent-2); }
+  .badge.bad { color: var(--danger); }
+  .room-card { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex: 1; }
+  .messages {
+    flex: 1; overflow-y: auto; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; margin-bottom: 8px; min-height: 200px;
+  }
+  .msg { padding: 6px 0; }
+  .msg + .msg { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+  .msg .who { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+  .msg.mine .who { color: var(--accent-2); }
+  .msg .body { white-space: pre-wrap; word-break: break-word; }
+  .send-row { display: flex; gap: 8px; }
+  .send-row input { flex: 1; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  #view-room { flex-direction: column; flex: 1; min-height: 0; }
+</style>
+</head>
+<body>
+<main>
+
+<section id="view-auth" style="display:none">
+  <h1>realtime-chat</h1>
+  <div class="tabs">
+    <button class="tab active" data-tab="login">Login</button>
+    <button class="tab" data-tab="register">Register</button>
+  </div>
+  <div id="tab-login" class="tab-panel" style="display:block">
+    <form id="form-login">
+      <input id="login-email" type="email" placeholder="Email" required autocomplete="email" />
+      <input id="login-password" type="password" placeholder="Password" required autocomplete="current-password" />
+      <button type="submit">Login</button>
+    </form>
+  </div>
+  <div id="tab-register" class="tab-panel">
+    <form id="form-register">
+      <input id="reg-username" placeholder="Username (3-32 chars)" required minlength="3" maxlength="32" autocomplete="username" />
+      <input id="reg-email" type="email" placeholder="Email" required autocomplete="email" />
+      <input id="reg-password" type="password" placeholder="Password (min 8 chars)" required minlength="8" autocomplete="new-password" />
+      <button type="submit">Register</button>
+    </form>
+  </div>
+  <p class="err" id="auth-err"></p>
+</section>
+
+<section id="view-lobby" style="display:none">
+  <div class="header">
+    <h1>Lobby</h1>
+    <div>
+      <span class="badge">Signed in as <strong id="me-label"></strong></span>
+      <button class="link" id="btn-logout">Logout</button>
+    </div>
+  </div>
+
+  <h2>Create a room</h2>
+  <form id="form-create-room" class="row">
+    <input id="room-name" placeholder="Room name" required maxlength="64" />
+    <select id="room-type">
+      <option value="public">Public</option>
+      <option value="private">Private</option>
+    </select>
+    <button type="submit">Create</button>
+  </form>
+  <p class="err" id="lobby-err"></p>
+
+  <h2>My rooms</h2>
+  <ul id="my-rooms"></ul>
+
+  <h2>Public rooms</h2>
+  <ul id="public-rooms"></ul>
+</section>
+
+<section id="view-room" style="display:none">
+  <div class="header">
+    <div>
+      <button class="link" id="btn-back">&larr; Back</button>
+      <strong id="room-title"></strong>
+    </div>
+    <span class="badge" id="ws-status">connecting…</span>
+  </div>
+  <div class="messages" id="messages"></div>
+  <form id="form-send" class="send-row">
+    <input id="msg-input" placeholder="Type a message and press Enter" maxlength="4000" autocomplete="off" />
+    <button type="submit">Send</button>
+  </form>
+</section>
+
+</main>
+
+<script>
+const API = '/api/v1';
+const state = {
+  token: localStorage.getItem('chat.token') || null,
+  me: null,
+  rooms: [],
+  publicRooms: [],
+  currentRoom: null,
+  messages: [],
+  ws: null,
+  nameCache: {},
+  reconnectTimer: null,
+};
+
+const $ = (id) => document.getElementById(id);
+
+function show(view) {
+  $('view-auth').style.display  = view === 'auth'  ? 'block' : 'none';
+  $('view-lobby').style.display = view === 'lobby' ? 'block' : 'none';
+  $('view-room').style.display  = view === 'room'  ? 'flex'  : 'none';
+}
+
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (state.token) headers.Authorization = 'Bearer ' + state.token;
+  const r = await fetch(API + path, { ...opts, headers });
+  if (r.status === 401) {
+    logout();
+    throw new Error('unauthorized');
+  }
+  if (r.status === 204) return null;
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error((data && data.error) || ('HTTP ' + r.status));
+  return data;
+}
+
+function setName(id, name) {
+  if (id && name) state.nameCache[id] = name;
+}
+
+function nameFor(id) {
+  if (state.me && id === state.me.id) return state.me.username + ' (you)';
+  return state.nameCache[id] || ('user-' + (id || '').slice(0, 6));
+}
+
+function clearErrs() { $('auth-err').textContent = ''; $('lobby-err').textContent = ''; }
+
+async function register(e) {
+  e.preventDefault();
+  clearErrs();
+  try {
+    const data = await api('/auth/register', { method: 'POST', body: JSON.stringify({
+      username: $('reg-username').value,
+      email: $('reg-email').value,
+      password: $('reg-password').value,
+    })});
+    onAuthSuccess(data);
+  } catch (err) { $('auth-err').textContent = err.message; }
+}
+
+async function login(e) {
+  e.preventDefault();
+  clearErrs();
+  try {
+    const data = await api('/auth/login', { method: 'POST', body: JSON.stringify({
+      email: $('login-email').value,
+      password: $('login-password').value,
+    })});
+    onAuthSuccess(data);
+  } catch (err) { $('auth-err').textContent = err.message; }
+}
+
+function onAuthSuccess(data) {
+  state.token = data.token;
+  state.me = data.user;
+  localStorage.setItem('chat.token', data.token);
+  setName(state.me.id, state.me.username);
+  connectWS();
+  goLobby();
+}
+
+function logout() {
+  state.token = null;
+  state.me = null;
+  state.currentRoom = null;
+  localStorage.removeItem('chat.token');
+  if (state.ws) { try { state.ws.close(); } catch {} state.ws = null; }
+  if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
+  show('auth');
+}
+
+async function goLobby() {
+  show('lobby');
+  $('me-label').textContent = state.me ? state.me.username : '';
+  clearErrs();
+  try {
+    state.rooms = await api('/rooms') || [];
+    state.publicRooms = await api('/rooms/public') || [];
+    renderLobby();
+  } catch (err) { $('lobby-err').textContent = err.message; }
+}
+
+function renderLobby() {
+  const mine = $('my-rooms');
+  mine.innerHTML = '';
+  if (state.rooms.length === 0) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="badge">No rooms yet — create one or join a public room below.</span>';
+    mine.appendChild(li);
+  }
+  state.rooms.forEach(r => {
+    const li = document.createElement('li');
+    const card = document.createElement('div');
+    card.className = 'room-card';
+    card.innerHTML = '<span>' + escapeHTML(r.name) + ' <span class="badge">(' + r.type + ')</span></span>';
+    const open = document.createElement('button');
+    open.textContent = 'Open';
+    open.onclick = () => enterRoom(r);
+    card.appendChild(open);
+    li.appendChild(card);
+    mine.appendChild(li);
+  });
+
+  const pub = $('public-rooms');
+  pub.innerHTML = '';
+  if (state.publicRooms.length === 0) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="badge">No public rooms yet.</span>';
+    pub.appendChild(li);
+  }
+  state.publicRooms.forEach(r => {
+    const li = document.createElement('li');
+    const card = document.createElement('div');
+    card.className = 'room-card';
+    card.innerHTML = '<span>' + escapeHTML(r.name) + '</span>';
+    const already = state.rooms.some(x => x.id === r.id);
+    const btn = document.createElement('button');
+    btn.textContent = already ? 'Open' : 'Join';
+    btn.className = already ? '' : 'secondary';
+    btn.onclick = async () => {
+      try {
+        if (!already) await api('/rooms/' + r.id + '/join', { method: 'POST' });
+        state.rooms = await api('/rooms') || [];
+        enterRoom(r);
+      } catch (err) { $('lobby-err').textContent = err.message; }
+    };
+    card.appendChild(btn);
+    li.appendChild(card);
+    pub.appendChild(li);
+  });
+}
+
+async function createRoom(e) {
+  e.preventDefault();
+  clearErrs();
+  try {
+    await api('/rooms', { method: 'POST', body: JSON.stringify({
+      name: $('room-name').value,
+      type: $('room-type').value,
+    })});
+    $('room-name').value = '';
+    goLobby();
+  } catch (err) { $('lobby-err').textContent = err.message; }
+}
+
+async function enterRoom(room) {
+  state.currentRoom = room;
+  state.messages = [];
+  show('room');
+  $('room-title').textContent = room.name;
+  $('messages').innerHTML = '';
+
+  wsSend({ type: 'subscribe', room_id: room.id });
+
+  try {
+    const msgs = await api('/rooms/' + room.id + '/messages?limit=50') || [];
+    state.messages = msgs.slice().reverse();
+    renderMessages();
+  } catch (err) {
+    const div = document.createElement('div');
+    div.className = 'err';
+    div.textContent = err.message;
+    $('messages').appendChild(div);
+  }
+
+  setTimeout(() => $('msg-input').focus(), 50);
+}
+
+function leaveRoomView() {
+  if (state.currentRoom) {
+    wsSend({ type: 'unsubscribe', room_id: state.currentRoom.id });
+    state.currentRoom = null;
+  }
+  goLobby();
+}
+
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+function renderMessages() {
+  const list = $('messages');
+  list.innerHTML = '';
+  state.messages.forEach(m => {
+    const div = document.createElement('div');
+    div.className = 'msg' + (state.me && m.user_id === state.me.id ? ' mine' : '');
+    const who = document.createElement('div');
+    who.className = 'who';
+    const t = new Date(m.created_at);
+    who.textContent = nameFor(m.user_id) + ' · ' + t.toLocaleTimeString();
+    const body = document.createElement('div');
+    body.className = 'body';
+    body.textContent = m.content;
+    div.appendChild(who);
+    div.appendChild(body);
+    list.appendChild(div);
+  });
+  list.scrollTop = list.scrollHeight;
+}
+
+function sendMessage(e) {
+  e.preventDefault();
+  const input = $('msg-input');
+  const content = input.value.trim();
+  if (!content || !state.currentRoom) return;
+  wsSend({ type: 'message', room_id: state.currentRoom.id, content });
+  input.value = '';
+}
+
+function setWsStatus(text, kind) {
+  const el = $('ws-status');
+  el.textContent = text;
+  el.className = 'badge' + (kind ? ' ' + kind : '');
+}
+
+function connectWS() {
+  if (!state.token) return;
+  if (state.ws && state.ws.readyState <= 1) return;
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = proto + '://' + location.host + '/ws?token=' + encodeURIComponent(state.token);
+  setWsStatus('connecting…');
+  const ws = new WebSocket(url);
+  state.ws = ws;
+
+  ws.onopen = () => {
+    setWsStatus('connected', 'ok');
+    if (state.currentRoom) wsSend({ type: 'subscribe', room_id: state.currentRoom.id });
+  };
+  ws.onclose = () => {
+    setWsStatus('disconnected — retrying', 'bad');
+    state.ws = null;
+    if (state.token) {
+      state.reconnectTimer = setTimeout(connectWS, 2000);
+    }
+  };
+  ws.onerror = () => {};
+  ws.onmessage = (e) => {
+    let env;
+    try { env = JSON.parse(e.data); } catch { return; }
+    if (env.type === 'message' && env.payload) {
+      if (state.currentRoom && env.payload.room_id === state.currentRoom.id) {
+        state.messages.push(env.payload);
+        renderMessages();
+      }
+    }
+  };
+}
+
+function wsSend(obj) {
+  if (state.ws && state.ws.readyState === 1) {
+    state.ws.send(JSON.stringify(obj));
+  }
+}
+
+async function boot() {
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', (e) => {
+    const which = e.target.dataset.tab;
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.tab === which));
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = (p.id === 'tab-' + which ? 'block' : 'none'));
+  }));
+  $('form-register').addEventListener('submit', register);
+  $('form-login').addEventListener('submit', login);
+  $('form-create-room').addEventListener('submit', createRoom);
+  $('form-send').addEventListener('submit', sendMessage);
+  $('btn-logout').addEventListener('click', logout);
+  $('btn-back').addEventListener('click', leaveRoomView);
+
+  if (state.token) {
+    try {
+      state.me = await api('/me');
+      setName(state.me.id, state.me.username);
+      connectWS();
+      goLobby();
+      return;
+    } catch {
+      logout();
+      return;
+    }
+  }
+  show('auth');
+}
+
+boot();
+</script>
+</body>
+</html>
