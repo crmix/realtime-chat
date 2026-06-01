@@ -1,11 +1,22 @@
 # realtime-chat
 
-A realtime chat backend in Go (chi + gorilla WebSocket) with PostgreSQL and
-Redis Pub/Sub for multi-instance message fan-out. Ships with a minimal
-single-page browser client at `/` so you can try it without writing any client
-code.
+> 🇺🇿 [O'zbek tilida o'qish](README.uz.md)
 
-## Quick start (English)
+A realtime chat backend in Go (chi + gorilla WebSocket) with PostgreSQL and
+Redis Pub/Sub for multi-instance message fan-out, built following **Clean
+Architecture** principles. Ships with a minimal single-page browser client at
+`/` so you can try it without writing any client code.
+
+## Features (MVP)
+
+- User registration and login (JWT)
+- Public and private rooms — create, join, leave
+- Send messages and fetch paginated history (REST)
+- Realtime message delivery over WebSocket
+- Multi-node fan-out via Redis Pub/Sub (horizontal scaling)
+- Structured logs (`slog`), graceful shutdown
+
+## Quick start
 
 **Requires:** Docker. (Go 1.25 only if you want to run outside Docker.)
 
@@ -23,6 +34,20 @@ from the public list — you'll see messages exchanged in real time.
 
 To stop: `Ctrl+C` in the terminal, then `make docker-down` if you also want to
 wipe the Postgres volume.
+
+### Running locally with Go
+
+```bash
+cp .env.example .env
+# edit .env, especially JWT_SECRET
+
+# install golang-migrate (one-time):
+go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
+
+# bring up Postgres and Redis yourself, then:
+make migrate-up
+make run
+```
 
 ### Two-laptop demo (Cloudflare quick tunnel)
 
@@ -62,24 +87,10 @@ firewall allows inbound 8080).
 - `HTTP_ALLOWED_ORIGINS=*` is wide-open by default — fine for a demo, tighten
   it for production.
 
----
+## Architecture
 
-Real vaqt rejimida ishlovchi chat backend — Go, PostgreSQL, Redis Pub/Sub
-ustida, **Clean Architecture** tamoyillariga amal qilingan holda yozilgan.
-
-## Imkoniyatlari (MVP)
-
-- Foydalanuvchini ro'yxatdan o'tkazish va kirish (JWT)
-- Public va private xonalar yaratish, qo'shilish/chiqish
-- Xona ichida xabar yuborish va tarixini olish (REST)
-- WebSocket orqali real vaqtli xabar yetkazish
-- Redis Pub/Sub orqali multi-node fan-out (horizontal scale uchun)
-- `slog` asosida tuzilgan loglar, graceful shutdown
-
-## Arxitektura
-
-Dependency yo'nalishi *ichkarigaga* yo'nalgan — tashqi qatlam ichki qatlamga
-bog'liq, lekin teskarisi yo'q.
+Dependencies point *inward* — outer layers depend on inner layers, never the
+other way around.
 
 ```
    ┌─────────────────────────────────────────────────────────────┐
@@ -88,29 +99,29 @@ bog'liq, lekin teskarisi yo'q.
    │  transport/http   transport/websocket                       │
    │  (handlers, dto, middleware, hub, client)                   │
    ├─────────────────────────────────────────────────────────────┤
-   │  service          (Auth, Room, Message — use-case lar)      │
+   │  service          (Auth, Room, Message — use cases)         │
    ├─────────────────────────────────────────────────────────────┤
-   │  domain           (entities, repository/service portlari,   │
-   │                    EventBus, xatoliklar — pure Go)          │
+   │  domain           (entities, repository/service ports,      │
+   │                    EventBus, errors — pure Go)              │
    ├─────────────────────────────────────────────────────────────┤
    │  repository/postgres  repository/redis                      │
-   │  (port implementatsiyalari)                                 │
+   │  (port implementations)                                     │
    └─────────────────────────────────────────────────────────────┘
 ```
 
-`internal/domain` — biznes obyektlar va portlar (interfeyslar). U hech kimga
-bog'liq emas. `service` — domain portlariga bog'lanib use-case'larni amalga
-oshiradi. `repository` — portlarning konkret implementatsiyasini beradi.
-`transport` — service'lardan foydalanib tashqi protokollarni (HTTP, WS)
-ochadi. `cmd/server` — barchasini bog'laydi.
+`internal/domain` holds business entities and ports (interfaces) — no external
+dependencies. `service` implements use cases against those ports.
+`repository` provides concrete implementations. `transport` exposes the
+application over HTTP/WebSocket, depending on services. `cmd/server` wires
+everything together.
 
-## Papkalar tuzilishi
+## Project layout
 
 ```
 .
 ├── cmd/server/main.go              # bootstrap, wiring, graceful shutdown
 ├── internal/
-│   ├── config/                     # env-asosli konfiguratsiya
+│   ├── config/                     # env-based configuration
 │   ├── domain/                     # entities, ports, errors
 │   ├── pkg/                        # jwt, hasher, logger, validator
 │   ├── repository/
@@ -120,77 +131,52 @@ ochadi. `cmd/server` — barchasini bog'laydi.
 │   └── transport/
 │       ├── http/                   # chi router, handlers, dto, middleware
 │       └── websocket/              # Hub, Client, upgrade handler
-├── migrations/                     # golang-migrate uchun .up/.down fayllar
+├── migrations/                     # golang-migrate up/down files
 ├── deployments/                    # Dockerfile, docker-compose.yml
 ├── scripts/migrate.sh
 └── Makefile
 ```
 
-## Tezda ishga tushirish
-
-### Docker Compose bilan (eng oson yo'l)
-
-```bash
-docker compose -f deployments/docker-compose.yml up --build
-```
-
-Bu Postgres, Redis, migrate va serverni ko'taradi. Server `:8080` da
-tinglaydi.
-
-### Lokal Go bilan
-
-```bash
-cp .env.example .env
-# .env ni tahrirlang, ayniqsa JWT_SECRET ni almashtiring
-
-# golang-migrate o'rnatish (bir martalik):
-go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-
-# Postgres va Redis ni shaxsiy ravishda ko'taring, so'ng:
-make migrate-up
-make run
-```
-
 ## API
 
-Barcha autentifikatsiya talab qiluvchi endpointlar `Authorization: Bearer
-<token>` headerini kutadi.
+All authenticated endpoints expect the `Authorization: Bearer <token>` header.
 
 ### Auth
 
-| Metod | Yo'l                          | Tavsif                    |
-|-------|-------------------------------|---------------------------|
-| POST  | `/api/v1/auth/register`       | foydalanuvchini ro'yxatga olish |
-| POST  | `/api/v1/auth/login`          | tizimga kirish, token olish |
-| GET   | `/api/v1/me`                  | joriy foydalanuvchi          |
+| Method | Path                          | Description                  |
+|--------|-------------------------------|------------------------------|
+| POST   | `/api/v1/auth/register`       | register a new user          |
+| POST   | `/api/v1/auth/login`          | log in, receive JWT          |
+| GET    | `/api/v1/me`                  | current user                 |
 
-### Xonalar
+### Rooms
 
-| Metod | Yo'l                                  | Tavsif                       |
-|-------|---------------------------------------|------------------------------|
-| GET   | `/api/v1/rooms`                       | mening xonalarim             |
-| GET   | `/api/v1/rooms/public`                | barcha public xonalar        |
-| POST  | `/api/v1/rooms`                       | yangi xona yaratish          |
-| GET   | `/api/v1/rooms/{id}`                  | xona ma'lumotlari            |
-| POST  | `/api/v1/rooms/{id}/join`             | qo'shilish (faqat public)    |
-| POST  | `/api/v1/rooms/{id}/leave`            | chiqish                       |
-| GET   | `/api/v1/rooms/{id}/members`          | a'zolar ro'yxati             |
-| GET   | `/api/v1/rooms/{id}/messages`         | tarix (`before`, `limit`)    |
-| POST  | `/api/v1/rooms/{id}/messages`         | xabar yuborish (REST)        |
+| Method | Path                                  | Description                  |
+|--------|---------------------------------------|------------------------------|
+| GET    | `/api/v1/rooms`                       | list my rooms                |
+| GET    | `/api/v1/rooms/public`                | list all public rooms        |
+| POST   | `/api/v1/rooms`                       | create a new room            |
+| GET    | `/api/v1/rooms/{id}`                  | room details                 |
+| POST   | `/api/v1/rooms/{id}/join`             | join (public rooms only)     |
+| POST   | `/api/v1/rooms/{id}/leave`            | leave                        |
+| GET    | `/api/v1/rooms/{id}/members`          | list members                 |
+| GET    | `/api/v1/rooms/{id}/messages`         | history (`before`, `limit`)  |
+| POST   | `/api/v1/rooms/{id}/messages`         | send a message (REST)        |
 
 ### Realtime
 
-`GET /ws?token=<jwt>` yoki `Authorization` header bilan WebSocket'ni
-ulang. Inbound xabarlar formati:
+Connect with `GET /ws?token=<jwt>` (or with an `Authorization` header).
+
+Inbound frames:
 
 ```json
 { "type": "subscribe",   "room_id": "<uuid>" }
 { "type": "unsubscribe", "room_id": "<uuid>" }
-{ "type": "message",     "room_id": "<uuid>", "content": "salom" }
+{ "type": "message",     "room_id": "<uuid>", "content": "hello" }
 { "type": "ping" }
 ```
 
-Outbound:
+Outbound frames:
 
 ```json
 { "type": "subscribed",   "payload": { "room_id": "<uuid>" } }
@@ -198,24 +184,24 @@ Outbound:
 { "type": "message.error","error": "forbidden" }
 ```
 
-## Multi-node ishlash
+## Multi-node operation
 
-`MessageService.Send` xabarni Postgres'ga yozadi va Redis Pub/Sub kanaliga
-(`REDIS_CHANNEL`, default `chat.messages`) e'lon qiladi. Har bir server
-instance o'sha kanalga obuna bo'lgan WebSocket Hub'ga ega; kanalga kelgan
-xabar lokal subscribers'ga yetkaziladi. Shu sababli xohlagancha
-instance ko'paytirishingiz mumkin.
+`MessageService.Send` persists the message in Postgres and publishes it to a
+Redis Pub/Sub channel (`REDIS_CHANNEL`, default `chat.messages`). Each server
+instance subscribes to the channel via its WebSocket Hub; incoming events are
+fanned out to local subscribers. Scale horizontally by running more instances
+behind a load balancer.
 
-## Konfiguratsiya
+## Configuration
 
-`.env.example` faylida barcha qabul qilinadigan o'zgaruvchilar bor.
-`JWT_SECRET` va `POSTGRES_DSN` — majburiy.
+`.env.example` lists every recognized variable. `JWT_SECRET` and
+`POSTGRES_DSN` are required.
 
-## Yo'l xaritasi (keyingi qadamlar)
+## Roadmap
 
 - Online presence (Redis `SETEX user:<id>:online`)
-- Typing indicator (transient WS event)
-- `unit + integration` testlar (testcontainers-go)
+- Typing indicators (transient WS event)
+- Unit + integration tests (testcontainers-go)
 - Rate limiting (per-user, per-room)
-- Refresh tokenlar, parolni tiklash
-- Frontend (React / Vue) misol
+- Refresh tokens, password reset
+- Example frontend (React / Vue)
